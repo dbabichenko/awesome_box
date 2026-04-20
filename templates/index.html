@@ -1,0 +1,1280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Annotate & Recognise</title>
+  <!-- QR code generation library -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <!-- ZXing for QR scanning -->
+  <script src="https://unpkg.com/@zxing/library@0.19.1/umd/index.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --ink:       #0d0d0d;
+      --paper:     #f5f0e8;
+      --cream:     #ede7d5;
+      --rule:      #c8bfa8;
+      --accent:    #c94f2c;
+      --accent2:   #2c6fc9;
+      --success:   #2ca068;
+      --mono:      'DM Mono', monospace;
+      --serif:     'Fraunces', Georgia, serif;
+    }
+
+    body {
+      background: var(--paper);
+      color: var(--ink);
+      font-family: var(--mono);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ── */
+    header {
+      border-bottom: 2px solid var(--ink);
+      padding: 1.2rem 2rem;
+      display: flex;
+      align-items: baseline;
+      gap: 1.2rem;
+    }
+    header h1 {
+      font-family: var(--serif);
+      font-weight: 700;
+      font-size: 1.7rem;
+      letter-spacing: -0.02em;
+    }
+    header span {
+      font-size: 0.72rem;
+      color: var(--rule);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    /* ── Layout ── */
+    main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      grid-template-rows: auto 1fr;
+      gap: 0;
+    }
+
+    /* ── Toolbar ── */
+    #toolbar {
+      grid-column: 1 / -1;
+      border-bottom: 1px solid var(--rule);
+      background: var(--cream);
+      padding: 0.6rem 1.2rem;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+    }
+
+    .tool-group {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding-right: 0.8rem;
+      border-right: 1px solid var(--rule);
+    }
+    .tool-group:last-child { border-right: none; }
+
+    .tool-label {
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--rule);
+      margin-right: 0.2rem;
+    }
+
+    button, label.btn {
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      padding: 0.35rem 0.75rem;
+      border: 1.5px solid var(--ink);
+      background: transparent;
+      color: var(--ink);
+      cursor: pointer;
+      transition: background 0.12s, color 0.12s;
+      white-space: nowrap;
+    }
+    button:hover, label.btn:hover { background: var(--ink); color: var(--paper); }
+    button.active { background: var(--ink); color: var(--paper); }
+    button.danger { border-color: var(--accent); color: var(--accent); }
+    button.danger:hover { background: var(--accent); color: var(--paper); }
+    button.primary { border-color: var(--accent2); color: var(--accent2); }
+    button.primary:hover { background: var(--accent2); color: var(--paper); }
+    button.success { border-color: var(--success); color: var(--success); }
+    button.success:hover { background: var(--success); color: var(--paper); }
+
+    input[type="color"] {
+      width: 32px; height: 32px;
+      border: 1.5px solid var(--ink);
+      padding: 2px;
+      background: var(--paper);
+      cursor: pointer;
+      border-radius: 0;
+    }
+    input[type="range"] {
+      width: 80px;
+      accent-color: var(--ink);
+    }
+
+    /* ── Canvas area ── */
+    #canvas-area {
+      position: relative;
+      overflow: auto;
+      background: #e8e2d6;
+      background-image:
+        linear-gradient(rgba(0,0,0,.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,0,0,.04) 1px, transparent 1px);
+      background-size: 24px 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: flex-start;
+      padding: 24px;
+      gap: 24px;
+    }
+
+    #canvas-wrapper {
+      position: relative;
+      display: inline-block;
+      box-shadow: 6px 6px 0 var(--ink);
+    }
+
+    #base-canvas, #draw-canvas {
+      display: block;
+      position: absolute;
+      top: 0; left: 0;
+    }
+    #base-canvas { position: relative; }
+    #draw-canvas { cursor: crosshair; }
+
+    #placeholder {
+      width: 600px;
+      height: 400px;
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.8rem;
+      border: 2px dashed var(--rule);
+      color: var(--rule);
+      font-size: 0.85rem;
+    }
+    #placeholder svg { opacity: 0.35; }
+
+    /* ── Notes section ── */
+    #notes-section {
+      width: 100%;
+      max-width: 900px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .notes-panel {
+      background: #fff;
+      border: 1.5px solid var(--ink);
+      box-shadow: 4px 4px 0 var(--ink);
+    }
+
+    .notes-panel-header {
+      background: var(--cream);
+      border-bottom: 1px solid var(--rule);
+      padding: 0.5rem 0.8rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.6rem;
+    }
+    .notes-panel-header h3 {
+      font-family: var(--serif);
+      font-size: 0.85rem;
+      font-weight: 300;
+      font-style: italic;
+    }
+    .notes-panel-header .tool-group {
+      border-right: none;
+      padding-right: 0;
+    }
+
+    /* Handwriting canvas */
+    #handwrite-canvas {
+      display: block;
+      cursor: crosshair;
+      touch-action: none;
+      width: 100%;
+      height: 160px;
+    }
+
+    /* Typed notes */
+    #typed-notes {
+      width: 100%;
+      min-height: 90px;
+      padding: 0.7rem;
+      font-family: var(--mono);
+      font-size: 0.82rem;
+      line-height: 1.6;
+      border: none;
+      outline: none;
+      resize: vertical;
+      background: #fff;
+      color: var(--ink);
+    }
+
+    /* ── Sidebar ── */
+    #sidebar {
+      border-left: 2px solid var(--ink);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .side-section {
+      padding: 1rem;
+      border-bottom: 1px solid var(--rule);
+    }
+    .side-section h2 {
+      font-family: var(--serif);
+      font-size: 0.9rem;
+      font-weight: 300;
+      font-style: italic;
+      margin-bottom: 0.6rem;
+      color: var(--ink);
+    }
+
+    #ocr-result {
+      background: #fff;
+      border: 1px solid var(--rule);
+      min-height: 80px;
+      padding: 0.6rem;
+      font-size: 0.8rem;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      color: var(--ink);
+    }
+    #ocr-result.empty { color: var(--rule); font-style: italic; }
+
+    /* ── QR section in sidebar ── */
+    .qr-tabs {
+      display: flex;
+      gap: 0;
+      margin-bottom: 0.7rem;
+      border: 1px solid var(--rule);
+    }
+    .qr-tab {
+      flex: 1;
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      padding: 0.3rem 0.4rem;
+      border: none;
+      background: transparent;
+      color: var(--rule);
+      cursor: pointer;
+      border-right: 1px solid var(--rule);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      transition: background 0.12s, color 0.12s;
+    }
+    .qr-tab:last-child { border-right: none; }
+    .qr-tab.active { background: var(--ink); color: var(--paper); }
+    .qr-tab:hover:not(.active) { background: var(--cream); color: var(--ink); }
+
+    .qr-panel { display: none; }
+    .qr-panel.active { display: block; }
+
+    /* QR Generate */
+    .qr-select-wrap {
+      display: flex;
+      gap: 0.4rem;
+      align-items: center;
+      margin-bottom: 0.6rem;
+    }
+    .qr-select-wrap select {
+      flex: 1;
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      padding: 0.3rem 0.5rem;
+      border: 1.5px solid var(--ink);
+      background: var(--paper);
+      color: var(--ink);
+      cursor: pointer;
+      outline: none;
+    }
+
+    #qr-output {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.6rem;
+      background: #fff;
+      border: 1px solid var(--rule);
+      min-height: 60px;
+    }
+    #qr-code-container canvas,
+    #qr-code-container img {
+      display: block;
+    }
+    #qr-label {
+      font-size: 0.65rem;
+      color: var(--rule);
+      text-align: center;
+    }
+
+    /* QR Scan */
+    #qr-scan-area {
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+    #qr-video-wrap {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 4/3;
+      background: #000;
+      overflow: hidden;
+      display: none;
+    }
+    #qr-video-wrap.active { display: block; }
+    #qr-video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .scan-overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+    }
+    .scan-frame {
+      width: 60%;
+      aspect-ratio: 1;
+      border: 2px solid var(--accent2);
+      box-shadow: 0 0 0 9999px rgba(0,0,0,0.35);
+    }
+    .scan-line {
+      position: absolute;
+      left: 20%; right: 20%;
+      height: 2px;
+      background: var(--accent2);
+      animation: scanline 2s linear infinite;
+      opacity: 0.8;
+    }
+    @keyframes scanline {
+      0%   { top: 20%; }
+      100% { top: 80%; }
+    }
+
+    #qr-scan-result {
+      background: #fff;
+      border: 1px solid var(--rule);
+      padding: 0.6rem;
+      font-size: 0.75rem;
+      min-height: 48px;
+      color: var(--rule);
+      font-style: italic;
+      line-height: 1.5;
+    }
+    #qr-scan-result.found { color: var(--ink); font-style: normal; }
+
+    /* Retrieved record card */
+    #retrieved-record {
+      display: none;
+      border: 1.5px solid var(--success);
+      background: #f0fff6;
+      padding: 0.6rem;
+      font-size: 0.72rem;
+      line-height: 1.6;
+      margin-top: 0.4rem;
+    }
+    #retrieved-record.show { display: block; }
+    #retrieved-record h4 {
+      font-family: var(--serif);
+      font-size: 0.8rem;
+      font-style: italic;
+      font-weight: 300;
+      color: var(--success);
+      margin-bottom: 0.35rem;
+    }
+
+    /* ── Records ── */
+    #records-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0.8rem;
+    }
+    #records-area h2 {
+      font-family: var(--serif);
+      font-size: 0.9rem;
+      font-weight: 300;
+      font-style: italic;
+      margin-bottom: 0.6rem;
+      padding-bottom: 0.4rem;
+      border-bottom: 1px solid var(--rule);
+    }
+
+    .record-card {
+      border: 1px solid var(--rule);
+      background: #fff;
+      margin-bottom: 0.6rem;
+      padding: 0.6rem;
+      font-size: 0.72rem;
+      line-height: 1.5;
+      position: relative;
+    }
+    .record-card .rec-meta {
+      color: var(--rule);
+      margin-bottom: 0.3rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .record-card .rec-ocr {
+      color: var(--ink);
+      white-space: pre-wrap;
+      max-height: 60px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .record-card .rec-delete {
+      font-size: 0.65rem;
+      padding: 0.15rem 0.4rem;
+      border-color: var(--rule);
+      color: var(--rule);
+    }
+    .record-card .rec-delete:hover { border-color: var(--accent); color: var(--accent); background: transparent; }
+    .record-card .rec-qr {
+      font-size: 0.65rem;
+      padding: 0.15rem 0.4rem;
+      border-color: var(--accent2);
+      color: var(--accent2);
+    }
+    .record-card .rec-qr:hover { background: var(--accent2); color: var(--paper); }
+
+    /* ── Status bar ── */
+    #statusbar {
+      grid-column: 1 / -1;
+      border-top: 1px solid var(--rule);
+      background: var(--cream);
+      padding: 0.3rem 1.2rem;
+      font-size: 0.68rem;
+      color: var(--rule);
+      display: flex;
+      gap: 1.5rem;
+    }
+    #statusbar .status-item span { color: var(--ink); }
+
+    /* ── Spinner ── */
+    .spinner {
+      display: inline-block;
+      width: 12px; height: 12px;
+      border: 2px solid var(--rule);
+      border-top-color: var(--ink);
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #file-input { display: none; }
+
+    .toast {
+      position: fixed;
+      bottom: 2rem; left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: var(--ink);
+      color: var(--paper);
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      padding: 0.5rem 1.2rem;
+      transition: transform 0.25s ease;
+      z-index: 999;
+      pointer-events: none;
+    }
+    .toast.show { transform: translateX(-50%) translateY(0); }
+
+    /* ── QR Modal ── */
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 900;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-backdrop.show { display: flex; }
+    .modal {
+      background: var(--paper);
+      border: 2px solid var(--ink);
+      box-shadow: 8px 8px 0 var(--ink);
+      padding: 1.4rem;
+      min-width: 260px;
+      max-width: 320px;
+      text-align: center;
+    }
+    .modal h3 {
+      font-family: var(--serif);
+      font-size: 1rem;
+      font-style: italic;
+      font-weight: 300;
+      margin-bottom: 0.8rem;
+    }
+    .modal-meta {
+      font-size: 0.7rem;
+      color: var(--rule);
+      margin-bottom: 0.8rem;
+    }
+    #modal-qr-container {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 0.8rem;
+    }
+    .modal-close {
+      margin-top: 0.4rem;
+    }
+  </style>
+</head>
+<body>
+
+<main>
+  <!-- Toolbar -->
+  <div id="toolbar">
+    <div class="tool-group">
+      <label class="btn" for="file-input">↑ Upload Image</label>
+      <input type="file" id="file-input" accept="image/*"/>
+    </div>
+
+    <div class="tool-group">
+      <span class="tool-label">Tool</span>
+      <button id="btn-draw" class="active" onclick="setTool('draw')">✏ Draw</button>
+      <button id="btn-erase" onclick="setTool('erase')">◻ Erase</button>
+    </div>
+
+    <div class="tool-group">
+      <span class="tool-label">Colour</span>
+      <input type="color" id="color-picker" value="#c94f2c"/>
+    </div>
+
+    <div class="tool-group">
+      <span class="tool-label">Size</span>
+      <input type="range" id="size-slider" min="1" max="24" value="3"/>
+      <span id="size-label" style="font-size:0.72rem;min-width:1.5rem">3</span>
+    </div>
+
+    <div class="tool-group">
+      <button class="danger" onclick="clearAnnotations()">✕ Clear</button>
+    </div>
+
+    <div class="tool-group">
+      <button class="primary" id="btn-save" onclick="saveAnnotation()">⬇ Save &amp; OCR</button>
+    </div>
+  </div>
+
+  <!-- Canvas + Notes -->
+  <div id="canvas-area">
+    <div id="canvas-wrapper">
+      <div id="placeholder">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+          <rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9l4-4 4 4 4-6 4 6"/>
+          <circle cx="8.5" cy="13.5" r="1.5"/>
+        </svg>
+        Upload an image to begin annotating
+      </div>
+    </div>
+
+    <!-- Notes section below image -->
+    <div id="notes-section">
+
+      <!-- Handwritten notes -->
+      <div class="notes-panel">
+        <div class="notes-panel-header">
+          <h3>✍ Handwritten Notes</h3>
+          <div class="tool-group" style="gap:0.3rem">
+            <span class="tool-label">Colour</span>
+            <input type="color" id="hw-color" value="#0d0d0d" style="width:26px;height:26px">
+            <span class="tool-label" style="margin-left:0.3rem">Size</span>
+            <input type="range" id="hw-size" min="1" max="16" value="2" style="width:60px">
+            <button class="danger" style="padding:0.2rem 0.5rem;font-size:0.7rem" onclick="clearHandwriting()">✕</button>
+          </div>
+        </div>
+        <canvas id="handwrite-canvas"></canvas>
+      </div>
+
+      <!-- Typed notes -->
+      <div class="notes-panel">
+        <div class="notes-panel-header">
+          <h3>⌨ Typed Notes</h3>
+          <span style="font-size:0.65rem;color:var(--rule)">Plain text</span>
+        </div>
+        <textarea id="typed-notes" placeholder="Type your notes here…"></textarea>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Sidebar -->
+  <div id="sidebar">
+    <div class="side-section">
+      <h2>OCR Result</h2>
+      <div id="ocr-result" class="empty">OCR text will appear here after saving…</div>
+    </div>
+
+    <!-- QR section -->
+    <div class="side-section">
+      <h2>QR Code</h2>
+      <div class="qr-tabs">
+        <button class="qr-tab active" onclick="switchQrTab('generate')">⊞ Generate</button>
+        <button class="qr-tab" onclick="switchQrTab('scan')">◎ Scan</button>
+      </div>
+
+      <!-- Generate panel -->
+      <div id="qr-panel-generate" class="qr-panel active">
+        <div class="qr-select-wrap">
+          <select id="qr-record-select">
+            <option value="">— select a record —</option>
+          </select>
+          <button onclick="generateQR()" class="primary" style="padding:0.3rem 0.6rem;font-size:0.7rem">Go</button>
+        </div>
+        <div id="qr-output">
+          <div id="qr-code-container"></div>
+          <div id="qr-label" style="display:none"></div>
+        </div>
+        <button id="btn-download-qr" onclick="downloadQR()" style="display:none;width:100%;margin-top:0.5rem;font-size:0.7rem">↓ Download QR</button>
+      </div>
+
+      <!-- Scan panel -->
+      <div id="qr-panel-scan" class="qr-panel">
+        <div id="qr-scan-area">
+          <div style="display:flex;gap:0.4rem">
+            <button id="btn-start-scan" class="success" style="flex:1;font-size:0.72rem" onclick="startScan()">▶ Start Camera</button>
+            <button id="btn-stop-scan" style="flex:1;font-size:0.72rem;display:none" class="danger" onclick="stopScan()">■ Stop</button>
+          </div>
+          <div id="qr-video-wrap">
+            <video id="qr-video" playsinline muted></video>
+            <div class="scan-overlay">
+              <div style="position:relative;width:60%;aspect-ratio:1">
+                <div class="scan-frame"></div>
+                <div class="scan-line"></div>
+              </div>
+            </div>
+          </div>
+          <div id="qr-scan-result">Point camera at a QR code to retrieve a record…</div>
+          <div id="retrieved-record">
+            <h4>✓ Record Retrieved</h4>
+            <div id="retrieved-content"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="records-area">
+      <h2>Saved Records</h2>
+      <div id="records-list"></div>
+    </div>
+  </div>
+</main>
+
+<div id="statusbar">
+  <div class="status-item">image: <span id="st-image">none</span></div>
+  <div class="status-item">tool: <span id="st-tool">draw</span></div>
+  <div class="status-item">strokes: <span id="st-strokes">0</span></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- QR Modal (shown from record cards) -->
+<div class="modal-backdrop" id="qr-modal">
+  <div class="modal">
+    <h3>QR Code</h3>
+    <div class="modal-meta" id="modal-qr-meta"></div>
+    <div id="modal-qr-container"></div>
+    <button class="modal-close" onclick="closeQRModal()">Close</button>
+  </div>
+</div>
+
+<script>
+  // ── State ──────────────────────────────────────────────────────────────────
+  let currentTool = 'draw';
+  let isDrawing = false;
+  let strokes = [];
+  let currentStroke = null;
+  let uploadedFilename = null;
+  let baseImg = null;
+
+  let baseCanvas, drawCanvas, baseCtx, drawCtx;
+
+  // Handwriting state
+  let hwIsDrawing = false;
+  let hwStrokes = [];
+  let hwCurrentStroke = null;
+  let hwCtx = null;
+
+  // QR / scan state
+  let qrScanner = null;
+  let scanStream = null;
+  let allRecords = [];
+
+  // ── Init canvases ──────────────────────────────────────────────────────────
+  function buildCanvases(w, h) {
+    const wrapper = document.getElementById('canvas-wrapper');
+    wrapper.innerHTML = '';
+
+    baseCanvas = document.createElement('canvas');
+    baseCanvas.id = 'base-canvas';
+    baseCanvas.width = w; baseCanvas.height = h;
+    baseCanvas.style.width = w + 'px'; baseCanvas.style.height = h + 'px';
+
+    drawCanvas = document.createElement('canvas');
+    drawCanvas.id = 'draw-canvas';
+    drawCanvas.width = w; drawCanvas.height = h;
+    drawCanvas.style.width = w + 'px'; drawCanvas.style.height = h + 'px';
+    drawCanvas.style.position = 'absolute';
+    drawCanvas.style.top = '0'; drawCanvas.style.left = '0';
+
+    wrapper.appendChild(baseCanvas);
+    wrapper.appendChild(drawCanvas);
+
+    baseCtx = baseCanvas.getContext('2d');
+    drawCtx = drawCanvas.getContext('2d');
+
+    drawCanvas.addEventListener('mousedown', startDraw);
+    drawCanvas.addEventListener('mousemove', moveDraw);
+    drawCanvas.addEventListener('mouseup', endDraw);
+    drawCanvas.addEventListener('mouseleave', endDraw);
+
+    drawCanvas.addEventListener('touchstart', e => { e.preventDefault(); startDraw(e.touches[0]); }, {passive:false});
+    drawCanvas.addEventListener('touchmove',  e => { e.preventDefault(); moveDraw(e.touches[0]); },  {passive:false});
+    drawCanvas.addEventListener('touchend',   e => { e.preventDefault(); endDraw(); },                {passive:false});
+  }
+
+  // ── Image upload ──────────────────────────────────────────────────────────
+  document.getElementById('file-input').addEventListener('change', async e => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('image', file);
+
+    const res = await fetch('/upload-image', { method: 'POST', body: formData });
+    const data = await res.json();
+    uploadedFilename = data.filename;
+    document.getElementById('st-image').textContent = uploadedFilename;
+
+    const url = `/uploads/${uploadedFilename}`;
+    baseImg = new Image();
+    baseImg.onload = () => {
+      const maxW = 900, maxH = 680;
+      let w = baseImg.naturalWidth, h = baseImg.naturalHeight;
+      if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
+      if (h > maxH) { w = Math.round(w * maxH / h); h = maxH; }
+      buildCanvases(w, h);
+      baseCtx.drawImage(baseImg, 0, 0, w, h);
+      strokes = [];
+      updateStrokeCount();
+
+      // Resize handwriting canvas to match
+      initHandwriteCanvas(w);
+    };
+    baseImg.src = url;
+  });
+
+  // ── Drawing ────────────────────────────────────────────────────────────────
+  function getPos(e) {
+    const rect = drawCanvas.getBoundingClientRect();
+    return {
+      x: (e.clientX - rect.left) * (drawCanvas.width / rect.width),
+      y: (e.clientY - rect.top)  * (drawCanvas.height / rect.height)
+    };
+  }
+
+  function startDraw(e) {
+    if (!drawCanvas) return;
+    isDrawing = true;
+    const pos = getPos(e);
+    const color = document.getElementById('color-picker').value;
+    const size = parseInt(document.getElementById('size-slider').value);
+    currentStroke = { tool: currentTool, color, size, points: [pos] };
+    drawCtx.beginPath();
+    drawCtx.moveTo(pos.x, pos.y);
+  }
+
+  function moveDraw(e) {
+    if (!isDrawing || !drawCanvas) return;
+    const pos = getPos(e);
+    currentStroke.points.push(pos);
+    drawCtx.lineWidth = currentStroke.size;
+    drawCtx.lineCap = 'round';
+    drawCtx.lineJoin = 'round';
+    if (currentTool === 'erase') {
+      drawCtx.globalCompositeOperation = 'destination-out';
+      drawCtx.strokeStyle = 'rgba(0,0,0,1)';
+    } else {
+      drawCtx.globalCompositeOperation = 'source-over';
+      drawCtx.strokeStyle = currentStroke.color;
+    }
+    const pts = currentStroke.points;
+    if (pts.length > 1) {
+      drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+      redrawAllStrokes();
+      drawCtx.beginPath();
+      drawCtx.moveTo(pts[pts.length-2].x, pts[pts.length-2].y);
+      drawCtx.lineTo(pos.x, pos.y);
+      drawCtx.stroke();
+    }
+  }
+
+  function endDraw() {
+    if (!isDrawing) return;
+    isDrawing = false;
+    if (currentStroke && currentStroke.points.length > 1) {
+      strokes.push(currentStroke);
+      updateStrokeCount();
+    }
+    currentStroke = null;
+    redrawAllStrokes();
+    drawCtx.globalCompositeOperation = 'source-over';
+  }
+
+  function redrawAllStrokes() {
+    if (!drawCtx) return;
+    drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+    drawCtx.globalCompositeOperation = 'source-over';
+    for (const s of strokes) {
+      if (s.points.length < 2) continue;
+      drawCtx.beginPath();
+      drawCtx.lineWidth = s.size;
+      drawCtx.lineCap = 'round';
+      drawCtx.lineJoin = 'round';
+      if (s.tool === 'erase') {
+        drawCtx.globalCompositeOperation = 'destination-out';
+        drawCtx.strokeStyle = 'rgba(0,0,0,1)';
+      } else {
+        drawCtx.globalCompositeOperation = 'source-over';
+        drawCtx.strokeStyle = s.color;
+      }
+      drawCtx.moveTo(s.points[0].x, s.points[0].y);
+      for (let i = 1; i < s.points.length; i++) drawCtx.lineTo(s.points[i].x, s.points[i].y);
+      drawCtx.stroke();
+    }
+    drawCtx.globalCompositeOperation = 'source-over';
+  }
+
+  // ── Tool switching ─────────────────────────────────────────────────────────
+  function setTool(t) {
+    currentTool = t;
+    document.getElementById('btn-draw').classList.toggle('active', t === 'draw');
+    document.getElementById('btn-erase').classList.toggle('active', t === 'erase');
+    document.getElementById('st-tool').textContent = t;
+    if (drawCanvas) drawCanvas.style.cursor = t === 'erase' ? 'cell' : 'crosshair';
+  }
+
+  function clearAnnotations() {
+    if (!drawCtx) return;
+    drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+    strokes = [];
+    updateStrokeCount();
+  }
+
+  function updateStrokeCount() {
+    document.getElementById('st-strokes').textContent = strokes.length;
+  }
+
+  document.getElementById('size-slider').addEventListener('input', e => {
+    document.getElementById('size-label').textContent = e.target.value;
+  });
+
+  // ── Handwriting canvas ──────────────────────────────────────────────────────
+  function initHandwriteCanvas(width) {
+    const hwCanvas = document.getElementById('handwrite-canvas');
+    hwCanvas.width = width || hwCanvas.offsetWidth || 600;
+    hwCanvas.height = 160;
+    hwCanvas.style.height = '160px';
+    hwCtx = hwCanvas.getContext('2d');
+    hwCtx.fillStyle = '#ffffff';
+    hwCtx.fillRect(0, 0, hwCanvas.width, hwCanvas.height);
+
+    // Draw faint ruled lines
+    hwCtx.strokeStyle = '#e8e2d6';
+    hwCtx.lineWidth = 1;
+    for (let y = 30; y < hwCanvas.height; y += 30) {
+      hwCtx.beginPath(); hwCtx.moveTo(0, y); hwCtx.lineTo(hwCanvas.width, y); hwCtx.stroke();
+    }
+
+    hwStrokes = [];
+  }
+
+  function hwGetPos(e) {
+    const hwCanvas = document.getElementById('handwrite-canvas');
+    const rect = hwCanvas.getBoundingClientRect();
+    return {
+      x: (e.clientX - rect.left) * (hwCanvas.width / rect.width),
+      y: (e.clientY - rect.top)  * (hwCanvas.height / rect.height)
+    };
+  }
+
+  const hwCanvas = document.getElementById('handwrite-canvas');
+  // Init at default width
+  initHandwriteCanvas(hwCanvas.offsetWidth || 600);
+
+  hwCanvas.addEventListener('mousedown', e => {
+    hwIsDrawing = true;
+    const pos = hwGetPos(e);
+    const color = document.getElementById('hw-color').value;
+    const size = parseInt(document.getElementById('hw-size').value);
+    hwCurrentStroke = { color, size, points: [pos] };
+    hwCtx.beginPath(); hwCtx.moveTo(pos.x, pos.y);
+  });
+
+  hwCanvas.addEventListener('mousemove', e => {
+    if (!hwIsDrawing) return;
+    const pos = hwGetPos(e);
+    hwCurrentStroke.points.push(pos);
+    const pts = hwCurrentStroke.points;
+    if (pts.length > 1) {
+      hwCtx.lineWidth = hwCurrentStroke.size;
+      hwCtx.lineCap = 'round';
+      hwCtx.lineJoin = 'round';
+      hwCtx.strokeStyle = hwCurrentStroke.color;
+      hwCtx.globalCompositeOperation = 'source-over';
+      hwCtx.beginPath();
+      hwCtx.moveTo(pts[pts.length-2].x, pts[pts.length-2].y);
+      hwCtx.lineTo(pos.x, pos.y);
+      hwCtx.stroke();
+    }
+  });
+
+  function hwEndDraw() {
+    if (!hwIsDrawing) return;
+    hwIsDrawing = false;
+    if (hwCurrentStroke && hwCurrentStroke.points.length > 1) hwStrokes.push(hwCurrentStroke);
+    hwCurrentStroke = null;
+  }
+  hwCanvas.addEventListener('mouseup', hwEndDraw);
+  hwCanvas.addEventListener('mouseleave', hwEndDraw);
+
+  hwCanvas.addEventListener('touchstart', e => { e.preventDefault(); hwIsDrawing = true; const pos = hwGetPos(e.touches[0]); const color = document.getElementById('hw-color').value; const size = parseInt(document.getElementById('hw-size').value); hwCurrentStroke = { color, size, points: [pos] }; hwCtx.beginPath(); hwCtx.moveTo(pos.x, pos.y); }, {passive:false});
+  hwCanvas.addEventListener('touchmove', e => { e.preventDefault(); if (!hwIsDrawing) return; const pos = hwGetPos(e.touches[0]); hwCurrentStroke.points.push(pos); const pts = hwCurrentStroke.points; if (pts.length > 1) { hwCtx.lineWidth = hwCurrentStroke.size; hwCtx.lineCap='round'; hwCtx.lineJoin='round'; hwCtx.strokeStyle=hwCurrentStroke.color; hwCtx.beginPath(); hwCtx.moveTo(pts[pts.length-2].x, pts[pts.length-2].y); hwCtx.lineTo(pos.x, pos.y); hwCtx.stroke(); } }, {passive:false});
+  hwCanvas.addEventListener('touchend', e => { e.preventDefault(); hwEndDraw(); }, {passive:false});
+
+  function clearHandwriting() {
+    if (!hwCtx) return;
+    const hwCv = document.getElementById('handwrite-canvas');
+    hwCtx.fillStyle = '#ffffff';
+    hwCtx.fillRect(0, 0, hwCv.width, hwCv.height);
+    hwCtx.strokeStyle = '#e8e2d6';
+    hwCtx.lineWidth = 1;
+    for (let y = 30; y < hwCv.height; y += 30) { hwCtx.beginPath(); hwCtx.moveTo(0, y); hwCtx.lineTo(hwCv.width, y); hwCtx.stroke(); }
+    hwStrokes = [];
+  }
+
+  // ── Save & OCR ─────────────────────────────────────────────────────────────
+  async function saveAnnotation() {
+    if (!uploadedFilename) { showToast('Upload an image first'); return; }
+    const typedVal = document.getElementById('typed-notes').value.trim();
+    if (strokes.length === 0 && hwStrokes.length === 0 && !typedVal) {
+      showToast('Add annotations or notes first'); return;
+    }
+
+    const btn = document.getElementById('btn-save');
+    btn.innerHTML = '<span class="spinner"></span> Processing…';
+    btn.disabled = true;
+
+    // annotation layer (strokes drawn on the image) — sent only when there are strokes
+    const canvas_data_url = (drawCanvas && strokes.length > 0)
+      ? drawCanvas.toDataURL('image/png')
+      : null;
+
+    // handwriting canvas — export only if anything was drawn (hwStrokes > 0)
+    // Strip the ruled guide-lines by re-rendering only the ink strokes onto a
+    // clean white canvas so Tesseract doesn't see them as characters.
+    let hw_canvas_data_url = null;
+    if (hwStrokes.length > 0) {
+      const hwCv = document.getElementById('handwrite-canvas');
+      const clean = document.createElement('canvas');
+      clean.width  = hwCv.width;
+      clean.height = hwCv.height;
+      const cCtx = clean.getContext('2d');
+      cCtx.fillStyle = '#ffffff';
+      cCtx.fillRect(0, 0, clean.width, clean.height);
+      // Replay only the ink strokes — no guide lines
+      for (const s of hwStrokes) {
+        if (s.points.length < 2) continue;
+        cCtx.beginPath();
+        cCtx.lineWidth  = s.size;
+        cCtx.lineCap    = 'round';
+        cCtx.lineJoin   = 'round';
+        cCtx.strokeStyle = s.color;
+        cCtx.moveTo(s.points[0].x, s.points[0].y);
+        for (let i = 1; i < s.points.length; i++) cCtx.lineTo(s.points[i].x, s.points[i].y);
+        cCtx.stroke();
+      }
+      hw_canvas_data_url = clean.toDataURL('image/png');
+    }
+
+    const ocrEl = document.getElementById('ocr-result');
+    ocrEl.textContent = '';
+    ocrEl.classList.remove('empty');
+
+    try {
+      const res = await fetch('/save-annotation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image_filename:    uploadedFilename,
+          annotation_data:  strokes,
+          canvas_data_url,
+          hw_canvas_data_url,
+          typed_notes: typedVal
+        })
+      });
+      const data = await res.json();
+
+      if (data.ocr_text) {
+        // Render each labelled section with a subtle heading
+        ocrEl.innerHTML = data.ocr_text
+          .split('\n\n')
+          .map(section => {
+            const firstNL = section.indexOf('\n');
+            if (firstNL === -1) return `<span>${section}</span>`;
+            const heading = section.slice(0, firstNL);   // e.g. [Image annotations]
+            const body    = section.slice(firstNL + 1);
+            return `<span style="display:block;font-size:0.65rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--rule);margin-top:0.4rem">${heading}</span><span>${body}</span>`;
+          })
+          .join('');
+      } else {
+        ocrEl.textContent = '(no text recognised)';
+        ocrEl.classList.add('empty');
+      }
+
+      showToast('Saved — ID #' + data.id);
+      loadRecords();
+    } catch(err) {
+      showToast('Error: ' + err.message);
+    } finally {
+      btn.innerHTML = '⬇ Save &amp; OCR';
+      btn.disabled = false;
+    }
+  }
+
+  // ── Records ────────────────────────────────────────────────────────────────
+  async function loadRecords() {
+    const res = await fetch('/annotations');
+    const rows = await res.json();
+    allRecords = rows;
+    const list = document.getElementById('records-list');
+    list.innerHTML = '';
+
+    // Refresh QR dropdown
+    const sel = document.getElementById('qr-record-select');
+    sel.innerHTML = '<option value="">— select a record —</option>';
+
+    if (!rows.length) {
+      list.innerHTML = '<div style="font-size:0.72rem;color:var(--rule);font-style:italic">No saved records yet.</div>';
+      return;
+    }
+    for (const r of rows) {
+      const card = document.createElement('div');
+      card.className = 'record-card';
+      const dt = new Date(r.created_at).toLocaleString();
+      card.innerHTML = `
+        <div class="rec-meta">
+          <span>#${r.id} · ${dt}</span>
+          <div style="display:flex;gap:0.3rem">
+            <button class="rec-qr" onclick="showQRModal(${r.id})">QR</button>
+            <button class="rec-delete" onclick="deleteRecord(${r.id}, this)">✕</button>
+          </div>
+        </div>
+        <div style="color:var(--rule);font-size:0.68rem;margin-bottom:0.25rem">${r.image_filename}</div>
+        <div class="rec-ocr">${r.ocr_text || '<em style="color:var(--rule)">no text</em>'}</div>
+        ${r.typed_notes ? `<div style="margin-top:0.25rem;font-size:0.68rem;color:var(--accent2)">📝 ${r.typed_notes.substring(0,60)}${r.typed_notes.length>60?'…':''}</div>` : ''}
+      `;
+      list.appendChild(card);
+
+      const opt = document.createElement('option');
+      opt.value = r.id;
+      opt.textContent = `#${r.id} — ${r.image_filename}`;
+      sel.appendChild(opt);
+    }
+  }
+
+  async function deleteRecord(id, btn) {
+    btn.disabled = true;
+    await fetch(`/annotations/${id}`, { method: 'DELETE' });
+    loadRecords();
+  }
+
+  // ── QR Generation ──────────────────────────────────────────────────────────
+  function switchQrTab(tab) {
+    document.querySelectorAll('.qr-tab').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.qr-panel').forEach(p => p.classList.remove('active'));
+    document.querySelector(`.qr-tab[onclick*="${tab}"]`).classList.add('active');
+    document.getElementById(`qr-panel-${tab}`).classList.add('active');
+    if (tab !== 'scan') stopScan();
+  }
+
+  function buildQRValue(recordId) {
+    return `${window.location.origin}/annotations/${recordId}`;
+  }
+
+  function generateQR() {
+    const sel = document.getElementById('qr-record-select');
+    const id = sel.value;
+    if (!id) { showToast('Select a record first'); return; }
+    renderQRCode(document.getElementById('qr-code-container'), id, 140);
+    const rec = allRecords.find(r => r.id == id);
+    const lbl = document.getElementById('qr-label');
+    lbl.textContent = rec ? `Record #${rec.id} · ${rec.image_filename}` : `Record #${id}`;
+    lbl.style.display = 'block';
+    document.getElementById('btn-download-qr').style.display = 'block';
+    document.getElementById('btn-download-qr').dataset.recordId = id;
+  }
+
+  function renderQRCode(container, recordId, size) {
+    container.innerHTML = '';
+    new QRCode(container, {
+      text: buildQRValue(recordId),
+      width: size,
+      height: size,
+      colorDark: '#0d0d0d',
+      colorLight: '#ffffff',
+      correctLevel: QRCode.CorrectLevel.M
+    });
+  }
+
+  function downloadQR() {
+    const id = document.getElementById('btn-download-qr').dataset.recordId;
+    const container = document.getElementById('qr-code-container');
+    const canvas = container.querySelector('canvas');
+    if (!canvas) { showToast('Generate a QR code first'); return; }
+    const a = document.createElement('a');
+    a.href = canvas.toDataURL('image/png');
+    a.download = `record-${id}-qr.png`;
+    a.click();
+  }
+
+  // Modal QR (from record card button)
+  function showQRModal(id) {
+    const rec = allRecords.find(r => r.id == id);
+    document.getElementById('modal-qr-meta').textContent = rec
+      ? `Record #${rec.id} · ${rec.image_filename}`
+      : `Record #${id}`;
+    renderQRCode(document.getElementById('modal-qr-container'), id, 180);
+    document.getElementById('qr-modal').classList.add('show');
+  }
+  function closeQRModal() {
+    document.getElementById('qr-modal').classList.remove('show');
+    document.getElementById('modal-qr-container').innerHTML = '';
+  }
+  document.getElementById('qr-modal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeQRModal();
+  });
+
+  // ── QR Scanning ────────────────────────────────────────────────────────────
+  async function startScan() {
+    const videoWrap = document.getElementById('qr-video-wrap');
+    const video = document.getElementById('qr-video');
+    const resultEl = document.getElementById('qr-scan-result');
+    const retrieved = document.getElementById('retrieved-record');
+
+    resultEl.textContent = 'Requesting camera…';
+    resultEl.className = '';
+    retrieved.classList.remove('show');
+
+    try {
+      scanStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' }
+      });
+      video.srcObject = scanStream;
+      await video.play();
+
+      videoWrap.classList.add('active');
+      document.getElementById('btn-start-scan').style.display = 'none';
+      document.getElementById('btn-stop-scan').style.display = '';
+
+      resultEl.textContent = 'Scanning… point at a QR code.';
+
+      // Use ZXing
+      const codeReader = new ZXing.BrowserQRCodeReader();
+      qrScanner = codeReader;
+
+      codeReader.decodeFromVideoElement(video, async (result, err) => {
+        if (result) {
+          const text = result.getText();
+          resultEl.textContent = '✓ QR detected: ' + text;
+          resultEl.className = 'found';
+          stopScan();
+          await fetchRecordFromQR(text);
+        }
+        // Ignore decode errors (they fire continuously until a code is found)
+      });
+
+    } catch(err) {
+      resultEl.textContent = 'Camera error: ' + err.message;
+      stopScan();
+    }
+  }
+
+  function stopScan() {
+    if (qrScanner) { try { qrScanner.reset(); } catch(e){} qrScanner = null; }
+    if (scanStream) { scanStream.getTracks().forEach(t => t.stop()); scanStream = null; }
+    document.getElementById('qr-video-wrap').classList.remove('active');
+    document.getElementById('btn-start-scan').style.display = '';
+    document.getElementById('btn-stop-scan').style.display = 'none';
+  }
+
+  async function fetchRecordFromQR(url) {
+    const retrieved = document.getElementById('retrieved-record');
+    const content = document.getElementById('retrieved-content');
+    retrieved.classList.remove('show');
+
+    // Extract record ID from URL  /annotations/<id>
+    const match = url.match(/\/annotations\/(\d+)$/);
+    if (!match) {
+      showToast('QR does not point to a record');
+      return;
+    }
+    const id = match[1];
+
+    try {
+      const res = await fetch(`/annotations/${id}`);
+      if (!res.ok) { showToast('Record #' + id + ' not found'); return; }
+      const rec = await res.json();
+      const dt = new Date(rec.created_at).toLocaleString();
+      content.innerHTML = `
+        <div style="color:var(--rule);margin-bottom:0.3rem">#${rec.id} · ${dt}</div>
+        <div style="margin-bottom:0.2rem;font-size:0.68rem">${rec.image_filename}</div>
+        ${rec.ocr_text ? `<div><strong>OCR:</strong> ${rec.ocr_text.substring(0,200)}</div>` : ''}
+        ${rec.typed_notes ? `<div style="margin-top:0.2rem"><strong>Notes:</strong> ${rec.typed_notes.substring(0,200)}</div>` : ''}
+      `;
+      retrieved.classList.add('show');
+      showToast('Record #' + id + ' retrieved');
+    } catch(e) {
+      showToast('Error fetching record: ' + e.message);
+    }
+  }
+
+  // ── Toast ──────────────────────────────────────────────────────────────────
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2500);
+  }
+
+  // ── Boot ───────────────────────────────────────────────────────────────────
+  loadRecords();
+</script>
+</body>
+</html>

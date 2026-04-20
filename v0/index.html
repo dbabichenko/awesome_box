@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Annotate & Recognise</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --ink:       #0d0d0d;
+      --paper:     #f5f0e8;
+      --cream:     #ede7d5;
+      --rule:      #c8bfa8;
+      --accent:    #c94f2c;
+      --accent2:   #2c6fc9;
+      --success:   #2ca068;
+      --mono:      'DM Mono', monospace;
+      --serif:     'Fraunces', Georgia, serif;
+    }
+
+    body {
+      background: var(--paper);
+      color: var(--ink);
+      font-family: var(--mono);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ── */
+    header {
+      border-bottom: 2px solid var(--ink);
+      padding: 1.2rem 2rem;
+      display: flex;
+      align-items: baseline;
+      gap: 1.2rem;
+    }
+    
+    header h1 {
+      font-family: var(--serif);
+      font-weight: 700;
+      font-size: 1.7rem;
+      letter-spacing: -0.02em;
+    }
+    header span {
+      font-size: 0.72rem;
+      color: var(--rule);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    /* ── Layout ── */
+    main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 320px;
+      grid-template-rows: auto 1fr;
+      gap: 0;
+    }
+
+    /* ── Toolbar ── */
+    #toolbar {
+      grid-column: 1 / -1;
+      border-bottom: 1px solid var(--rule);
+      background: var(--cream);
+      padding: 0.6rem 1.2rem;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+    }
+
+    .tool-group {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding-right: 0.8rem;
+      border-right: 1px solid var(--rule);
+    }
+    .tool-group:last-child { border-right: none; }
+
+    .tool-label {
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--rule);
+      margin-right: 0.2rem;
+    }
+
+    button, label.btn {
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      padding: 0.35rem 0.75rem;
+      border: 1.5px solid var(--ink);
+      background: transparent;
+      color: var(--ink);
+      cursor: pointer;
+      transition: background 0.12s, color 0.12s;
+      white-space: nowrap;
+    }
+    button:hover, label.btn:hover { background: var(--ink); color: var(--paper); }
+    button.active { background: var(--ink); color: var(--paper); }
+    button.danger { border-color: var(--accent); color: var(--accent); }
+    button.danger:hover { background: var(--accent); color: var(--paper); }
+    button.primary { border-color: var(--accent2); color: var(--accent2); }
+    button.primary:hover { background: var(--accent2); color: var(--paper); }
+
+    input[type="color"] {
+      width: 32px; height: 32px;
+      border: 1.5px solid var(--ink);
+      padding: 2px;
+      background: var(--paper);
+      cursor: pointer;
+      border-radius: 0;
+    }
+    input[type="range"] {
+      width: 80px;
+      accent-color: var(--ink);
+    }
+
+    /* ── Canvas area ── */
+    #canvas-area {
+      position: relative;
+      overflow: auto;
+      background: #e8e2d6;
+      background-image:
+        linear-gradient(rgba(0,0,0,.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,0,0,.04) 1px, transparent 1px);
+      background-size: 24px 24px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: flex-start;
+      padding: 24px;
+    }
+
+    #canvas-wrapper {
+      position: relative;
+      display: inline-block;
+      box-shadow: 6px 6px 0 var(--ink);
+    }
+
+    #base-canvas, #draw-canvas {
+      display: block;
+      position: absolute;
+      top: 0; left: 0;
+    }
+    #base-canvas { position: relative; }
+    #draw-canvas { cursor: crosshair; }
+
+    #placeholder {
+      width: 600px;
+      height: 400px;
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.8rem;
+      border: 2px dashed var(--rule);
+      color: var(--rule);
+      font-size: 0.85rem;
+    }
+    #placeholder svg { opacity: 0.35; }
+
+    /* ── Sidebar ── */
+    #sidebar {
+      border-left: 2px solid var(--ink);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .side-section {
+      padding: 1rem;
+      border-bottom: 1px solid var(--rule);
+    }
+    .side-section h2 {
+      font-family: var(--serif);
+      font-size: 0.9rem;
+      font-weight: 300;
+      font-style: italic;
+      margin-bottom: 0.6rem;
+      color: var(--ink);
+    }
+
+    #ocr-result {
+      background: #fff;
+      border: 1px solid var(--rule);
+      min-height: 80px;
+      padding: 0.6rem;
+      font-size: 0.8rem;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      color: var(--ink);
+    }
+    #ocr-result.empty { color: var(--rule); font-style: italic; }
+
+    /* ── Records ── */
+    #records-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0.8rem;
+    }
+    #records-area h2 {
+      font-family: var(--serif);
+      font-size: 0.9rem;
+      font-weight: 300;
+      font-style: italic;
+      margin-bottom: 0.6rem;
+      padding-bottom: 0.4rem;
+      border-bottom: 1px solid var(--rule);
+    }
+
+    .record-card {
+      border: 1px solid var(--rule);
+      background: #fff;
+      margin-bottom: 0.6rem;
+      padding: 0.6rem;
+      font-size: 0.72rem;
+      line-height: 1.5;
+      position: relative;
+    }
+    .record-card .rec-meta {
+      color: var(--rule);
+      margin-bottom: 0.3rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .record-card .rec-ocr {
+      color: var(--ink);
+      white-space: pre-wrap;
+      max-height: 60px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .record-card .rec-delete {
+      font-size: 0.65rem;
+      padding: 0.15rem 0.4rem;
+      border-color: var(--rule);
+      color: var(--rule);
+    }
+    .record-card .rec-delete:hover { border-color: var(--accent); color: var(--accent); background: transparent; }
+
+    /* ── Status bar ── */
+    #statusbar {
+      grid-column: 1 / -1;
+      border-top: 1px solid var(--rule);
+      background: var(--cream);
+      padding: 0.3rem 1.2rem;
+      font-size: 0.68rem;
+      color: var(--rule);
+      display: flex;
+      gap: 1.5rem;
+    }
+    #statusbar .status-item span { color: var(--ink); }
+
+    /* ── Spinner ── */
+    .spinner {
+      display: inline-block;
+      width: 12px; height: 12px;
+      border: 2px solid var(--rule);
+      border-top-color: var(--ink);
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #file-input { display: none; }
+
+    .toast {
+      position: fixed;
+      bottom: 2rem; left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: var(--ink);
+      color: var(--paper);
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      padding: 0.5rem 1.2rem;
+      transition: transform 0.25s ease;
+      z-index: 999;
+      pointer-events: none;
+    }
+    .toast.show { transform: translateX(-50%) translateY(0); }
+  </style>
+</head>
+<body>
+
+<main>
+  <!-- Toolbar -->
+  <div id="toolbar">
+    <div class="tool-group">
+      <label class="btn" for="file-input">↑ Upload Image</label>
+      <input type="file" id="file-input" accept="image/*"/>
+    </div>
+
+    <div class="tool-group">
+      <span class="tool-label">Tool</span>
+      <button id="btn-draw" class="active" onclick="setTool('draw')">✏ Draw</button>
+      <button id="btn-erase" onclick="setTool('erase')">◻ Erase</button>
+    </div>
+
+    <div class="tool-group">
+      <span class="tool-label">Colour</span>
+      <input type="color" id="color-picker" value="#c94f2c"/>
+    </div>
+
+    <div class="tool-group">
+      <span class="tool-label">Size</span>
+      <input type="range" id="size-slider" min="1" max="24" value="3"/>
+      <span id="size-label" style="font-size:0.72rem;min-width:1.5rem">3</span>
+    </div>
+
+    <div class="tool-group">
+      <button class="danger" onclick="clearAnnotations()">✕ Clear</button>
+    </div>
+
+    <div class="tool-group">
+      <button class="primary" id="btn-save" onclick="saveAnnotation()">⬇ Save &amp; OCR</button>
+    </div>
+  </div>
+
+  <!-- Canvas -->
+  <div id="canvas-area">
+    <div id="canvas-wrapper">
+      <div id="placeholder">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+          <rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9l4-4 4 4 4-6 4 6"/>
+          <circle cx="8.5" cy="13.5" r="1.5"/>
+        </svg>
+        Upload an image to begin annotating
+      </div>
+    </div>
+  </div>
+
+  <!-- Sidebar -->
+  <div id="sidebar">
+    <div class="side-section">
+      <h2>OCR Result</h2>
+      <div id="ocr-result" class="empty">OCR text will appear here after saving…</div>
+    </div>
+    <div id="records-area">
+      <h2>Saved Records</h2>
+      <div id="records-list"></div>
+    </div>
+  </div>
+</main>
+
+<div id="statusbar">
+  <div class="status-item">image: <span id="st-image">none</span></div>
+  <div class="status-item">tool: <span id="st-tool">draw</span></div>
+  <div class="status-item">strokes: <span id="st-strokes">0</span></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // ── State ──────────────────────────────────────────────────────────────────
+  let currentTool = 'draw';
+  let isDrawing = false;
+  let strokes = [];
+  let currentStroke = null;
+  let uploadedFilename = null;
+  let baseImg = null;
+
+  let baseCanvas, drawCanvas, baseCtx, drawCtx;
+
+  // ── Init canvases ──────────────────────────────────────────────────────────
+  function buildCanvases(w, h) {
+    const wrapper = document.getElementById('canvas-wrapper');
+    wrapper.innerHTML = '';
+
+    baseCanvas = document.createElement('canvas');
+    baseCanvas.id = 'base-canvas';
+    baseCanvas.width = w; baseCanvas.height = h;
+    baseCanvas.style.width = w + 'px'; baseCanvas.style.height = h + 'px';
+
+    drawCanvas = document.createElement('canvas');
+    drawCanvas.id = 'draw-canvas';
+    drawCanvas.width = w; drawCanvas.height = h;
+    drawCanvas.style.width = w + 'px'; drawCanvas.style.height = h + 'px';
+    drawCanvas.style.position = 'absolute';
+    drawCanvas.style.top = '0'; drawCanvas.style.left = '0';
+
+    wrapper.appendChild(baseCanvas);
+    wrapper.appendChild(drawCanvas);
+
+    baseCtx = baseCanvas.getContext('2d');
+    drawCtx = drawCanvas.getContext('2d');
+
+    drawCanvas.addEventListener('mousedown', startDraw);
+    drawCanvas.addEventListener('mousemove', moveDraw);
+    drawCanvas.addEventListener('mouseup', endDraw);
+    drawCanvas.addEventListener('mouseleave', endDraw);
+
+    // Touch
+    drawCanvas.addEventListener('touchstart', e => { e.preventDefault(); startDraw(e.touches[0]); }, {passive:false});
+    drawCanvas.addEventListener('touchmove',  e => { e.preventDefault(); moveDraw(e.touches[0]); },  {passive:false});
+    drawCanvas.addEventListener('touchend',   e => { e.preventDefault(); endDraw(); },                {passive:false});
+  }
+
+  // ── Image upload ──────────────────────────────────────────────────────────
+  document.getElementById('file-input').addEventListener('change', async e => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('image', file);
+
+    const res = await fetch('/upload-image', { method: 'POST', body: formData });
+    const data = await res.json();
+    uploadedFilename = data.filename;
+    document.getElementById('st-image').textContent = uploadedFilename;
+
+    const url = `/uploads/${uploadedFilename}`;
+    baseImg = new Image();
+    baseImg.onload = () => {
+      const maxW = 900, maxH = 680;
+      let w = baseImg.naturalWidth, h = baseImg.naturalHeight;
+      if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
+      if (h > maxH) { w = Math.round(w * maxH / h); h = maxH; }
+      buildCanvases(w, h);
+      baseCtx.drawImage(baseImg, 0, 0, w, h);
+      strokes = [];
+      updateStrokeCount();
+    };
+    baseImg.src = url;
+  });
+
+  // ── Drawing ────────────────────────────────────────────────────────────────
+  function getPos(e) {
+    const rect = drawCanvas.getBoundingClientRect();
+    return {
+      x: (e.clientX - rect.left) * (drawCanvas.width / rect.width),
+      y: (e.clientY - rect.top)  * (drawCanvas.height / rect.height)
+    };
+  }
+
+  function startDraw(e) {
+    if (!drawCanvas) return;
+    isDrawing = true;
+    const pos = getPos(e);
+    const color = document.getElementById('color-picker').value;
+    const size = parseInt(document.getElementById('size-slider').value);
+    currentStroke = { tool: currentTool, color, size, points: [pos] };
+
+    drawCtx.beginPath();
+    drawCtx.moveTo(pos.x, pos.y);
+  }
+
+  function moveDraw(e) {
+    if (!isDrawing || !drawCanvas) return;
+    const pos = getPos(e);
+    currentStroke.points.push(pos);
+
+    drawCtx.lineWidth = currentStroke.size;
+    drawCtx.lineCap = 'round';
+    drawCtx.lineJoin = 'round';
+
+    if (currentTool === 'erase') {
+      drawCtx.globalCompositeOperation = 'destination-out';
+      drawCtx.strokeStyle = 'rgba(0,0,0,1)';
+    } else {
+      drawCtx.globalCompositeOperation = 'source-over';
+      drawCtx.strokeStyle = currentStroke.color;
+    }
+
+    const pts = currentStroke.points;
+    if (pts.length > 1) {
+      drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+      redrawAllStrokes();
+      drawCtx.beginPath();
+      drawCtx.moveTo(pts[pts.length-2].x, pts[pts.length-2].y);
+      drawCtx.lineTo(pos.x, pos.y);
+      drawCtx.stroke();
+    }
+  }
+
+  function endDraw() {
+    if (!isDrawing) return;
+    isDrawing = false;
+    if (currentStroke && currentStroke.points.length > 1) {
+      strokes.push(currentStroke);
+      updateStrokeCount();
+    }
+    currentStroke = null;
+    redrawAllStrokes();
+    drawCtx.globalCompositeOperation = 'source-over';
+  }
+
+  function redrawAllStrokes() {
+    if (!drawCtx) return;
+    drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+    drawCtx.globalCompositeOperation = 'source-over';
+    for (const s of strokes) {
+      if (s.points.length < 2) continue;
+      drawCtx.beginPath();
+      drawCtx.lineWidth = s.size;
+      drawCtx.lineCap = 'round';
+      drawCtx.lineJoin = 'round';
+      if (s.tool === 'erase') {
+        drawCtx.globalCompositeOperation = 'destination-out';
+        drawCtx.strokeStyle = 'rgba(0,0,0,1)';
+      } else {
+        drawCtx.globalCompositeOperation = 'source-over';
+        drawCtx.strokeStyle = s.color;
+      }
+      drawCtx.moveTo(s.points[0].x, s.points[0].y);
+      for (let i = 1; i < s.points.length; i++) {
+        drawCtx.lineTo(s.points[i].x, s.points[i].y);
+      }
+      drawCtx.stroke();
+    }
+    drawCtx.globalCompositeOperation = 'source-over';
+  }
+
+  // ── Tool switching ─────────────────────────────────────────────────────────
+  function setTool(t) {
+    currentTool = t;
+    document.getElementById('btn-draw').classList.toggle('active', t === 'draw');
+    document.getElementById('btn-erase').classList.toggle('active', t === 'erase');
+    document.getElementById('st-tool').textContent = t;
+    if (drawCanvas) drawCanvas.style.cursor = t === 'erase' ? 'cell' : 'crosshair';
+  }
+
+  function clearAnnotations() {
+    if (!drawCtx) return;
+    drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+    strokes = [];
+    updateStrokeCount();
+  }
+
+  function updateStrokeCount() {
+    document.getElementById('st-strokes').textContent = strokes.length;
+  }
+
+  // ── Size slider ────────────────────────────────────────────────────────────
+  document.getElementById('size-slider').addEventListener('input', e => {
+    document.getElementById('size-label').textContent = e.target.value;
+  });
+
+  // ── Save & OCR ─────────────────────────────────────────────────────────────
+  async function saveAnnotation() {
+    if (!uploadedFilename) { showToast('Upload an image first'); return; }
+    if (strokes.length === 0) { showToast('Draw something first'); return; }
+
+    const btn = document.getElementById('btn-save');
+    btn.innerHTML = '<span class="spinner"></span> Processing…';
+    btn.disabled = true;
+
+    const canvas_data_url = drawCanvas.toDataURL('image/png');
+    const ocrEl = document.getElementById('ocr-result');
+    ocrEl.textContent = '';
+    ocrEl.classList.remove('empty');
+
+    try {
+      const res = await fetch('/save-annotation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image_filename: uploadedFilename,
+          annotation_data: strokes,
+          canvas_data_url
+        })
+      });
+      const data = await res.json();
+
+      ocrEl.textContent = data.ocr_text || '(no text recognised)';
+      if (!data.ocr_text) ocrEl.classList.add('empty');
+
+      showToast('Saved — ID #' + data.id);
+      loadRecords();
+    } catch(err) {
+      showToast('Error: ' + err.message);
+    } finally {
+      btn.innerHTML = '⬇ Save &amp; OCR';
+      btn.disabled = false;
+    }
+  }
+
+  // ── Records ────────────────────────────────────────────────────────────────
+  async function loadRecords() {
+    const res = await fetch('/annotations');
+    const rows = await res.json();
+    const list = document.getElementById('records-list');
+    list.innerHTML = '';
+    if (!rows.length) {
+      list.innerHTML = '<div style="font-size:0.72rem;color:var(--rule);font-style:italic">No saved records yet.</div>';
+      return;
+    }
+    for (const r of rows) {
+      const card = document.createElement('div');
+      card.className = 'record-card';
+      const dt = new Date(r.created_at).toLocaleString();
+      card.innerHTML = `
+        <div class="rec-meta">
+          <span>#${r.id} · ${dt}</span>
+          <button class="rec-delete" onclick="deleteRecord(${r.id}, this)">✕</button>
+        </div>
+        <div style="color:var(--rule);font-size:0.68rem;margin-bottom:0.25rem">${r.image_filename}</div>
+        <div class="rec-ocr">${r.ocr_text || '<em style="color:var(--rule)">no text</em>'}</div>
+      `;
+      list.appendChild(card);
+    }
+  }
+
+  async function deleteRecord(id, btn) {
+    btn.disabled = true;
+    await fetch(`/annotations/${id}`, { method: 'DELETE' });
+    loadRecords();
+  }
+
+  // ── Toast ──────────────────────────────────────────────────────────────────
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2500);
+  }
+
+  // ── Boot ───────────────────────────────────────────────────────────────────
+  loadRecords();
+</script>
+</body>
+</html>
